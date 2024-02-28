@@ -3,9 +3,13 @@
 #include <string>
 #include <vector>
 
+
+/*******************************************************************************
+*	Lexer
+*******************************************************************************/
+
 // The lexer returns [0-255] if it is an unknown character, otherwise
 // one of these for known tokens.
-
 enum Token {
 	tok_eof = -1,
 
@@ -75,8 +79,13 @@ static int gettok() {
 	return ThisChar;
 }
 
-// Abstract Syntax Tree
-// One object for each construct in the language
+
+/*******************************************************************************
+* Abstract Syntax Tree
+* One object for each construct in the language
+*******************************************************************************/
+
+namespace {
 
 // Expressions AST
 class ExprAST {
@@ -146,14 +155,29 @@ public:
 	: Proto(std::move(Proto)), Body(std::move(Body)) {}
 };
 
-auto LHS = std::make_unique<VariableExprAST>("x");
-auto RHS = std::make_unique<VariableExprAST>("y");
-auto Result = std::make_unique<BinaryExprAST>('+', std::move(LHS), std::move(RHS));
+}
 
-// simple token buffer
+/*******************************************************************************
+*	Parser
+*******************************************************************************/
+
+// token buffer
 static int CurTok;
 static int getNextToken() {
 	return CurTok = gettok();
+}
+
+static std::map<char, int> BinopPrecedence;
+
+// get precedence of pending binary operator
+static int GetTokPrecedence() {
+	if (!isascii(CurTok))
+		return -1;
+
+	int TokPrec = BinopPrecedence[CurTok];
+	if (TokPrec <= 0)
+		return -1;
+	return TokPrec;
 }
 
 // LogError - Helper functions for error handling
@@ -166,6 +190,8 @@ std::unique_ptr<PrototypeAST> LogErrorProto(const char* Str) {
 	LogError(Str);
 	return nullptr;
 }
+
+static std::unique_ptr<ExprAST> ParseExpression();
 
 // numberexpr ::= number
 static std::unique_ptr<ExprAST> ParseNumberExpr() {
@@ -205,14 +231,15 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
 		while (true) {
 			if (auto Arg = ParseExpression())
 				Args.push_back(std::move(Arg));
-				else
+			else
 				return nullptr;
 
 			if (CurTok == ')')
-			break;
+				break;
 
 			if (CurTok != ',')
 				return LogError("Expected ')' or ',' in argument list");
+
 			getNextToken();
 		}
 	}
@@ -234,27 +261,6 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
 		case '(':
 			return ParseParenExpr();
 	}
-}
-
-static std::map<char, int> BinopPrecedence;
-
-// get precedence of pending binary operator
-static int GetTokPrecedence() {
-	if (!isascii(CurTok))
-		return -1;
-
-	int TokPrec = BinopPrecedence[CurTok];
-	if (TokPrec <= 0)
-		return -1;
-	return TokPrec;
-}
-
-static std::unique_ptr<ExprAST> ParseExpression() {
-	auto LHS = ParsePrimary();
-	if (!LHS)
-		return nullptr;
-
-	return ParseBinOpRHS(0, std::move(LHS));
 }
 
 // parse sequence of pairs
@@ -288,6 +294,14 @@ std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec, std::unique_ptr<ExprAST> LH
 		// merge LHS and RHS
 		LHS = std::make_unique<BinaryExprAST>(BinOp, std::move(LHS), std::move(RHS));
 	} //loop around to top
+}
+
+static std::unique_ptr<ExprAST> ParseExpression() {
+	auto LHS = ParsePrimary();
+	if (!LHS)
+		return nullptr;
+
+	return ParseBinOpRHS(0, std::move(LHS));
 }
 
 // prototype
@@ -328,12 +342,6 @@ static std::unique_ptr<FunctionAST> ParseDefinition() {
 	return nullptr;
 }
 
-// external 'extern' prototype
-static std::unique_ptr<PrototypeAST> ParseExtern() {
-	getNextToken();
-	return ParsePrototype();
-}
-
 // toplevelexpr expression
 static std::unique_ptr<FunctionAST> ParseTopLevelExpr() {
 	if (auto E = ParseExpression()) {
@@ -344,7 +352,16 @@ static std::unique_ptr<FunctionAST> ParseTopLevelExpr() {
 	return nullptr;
 }
 
-// top-level parsing
+// external 'extern' prototype
+static std::unique_ptr<PrototypeAST> ParseExtern() {
+	getNextToken();
+	return ParsePrototype();
+}
+
+/*******************************************************************************
+* Top-level parsing
+*******************************************************************************/
+
 static void HandleDefinition() {
 	if (ParseDefinition()) {
 		fprintf(stderr, "Parsed a function definition.\n");
@@ -393,17 +410,21 @@ static void MainLoop() {
 	}
 }
 
+/*******************************************************************************
+* Main driver code
+*******************************************************************************/
+
 int main() {
 	// 1 is lowest precedence
 	BinopPrecedence['<'] = 10;
 	BinopPrecedence['+'] = 20;
 	BinopPrecedence['-'] = 30;
 	BinopPrecedence['*'] = 40;
-	
+
 	fprintf(stderr, "> ");
 	getNextToken();
 
 	MainLoop();
-	
+
 	return 0;
 }
