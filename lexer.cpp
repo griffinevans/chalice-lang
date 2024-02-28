@@ -249,14 +249,6 @@ static int GetTokPrecedence() {
 	return TokPrec;
 }
 
-int main() {
-	// 1 is lowest precedence
-	BinopPrecedence['<'] = 10;
-	BinopPrecedence['+'] = 20;
-	BinopPrecedence['-'] = 30;
-	BinopPrecedence['*'] = 40;
-}
-
 static std::unique_ptr<ExprAST> ParseExpression() {
 	auto LHS = ParsePrimary();
 	if (!LHS)
@@ -296,4 +288,122 @@ std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec, std::unique_ptr<ExprAST> LH
 		// merge LHS and RHS
 		LHS = std::make_unique<BinaryExprAST>(BinOp, std::move(LHS), std::move(RHS));
 	} //loop around to top
+}
+
+// prototype
+static std::unique_ptr<PrototypeAST> ParsePrototype() {
+	if (CurTok != tok_identifier)
+		return LogErrorProto("Expected function name in prototype");
+
+	std::string FnName = IdentifierStr;
+	getNextToken();
+
+	if (CurTok != '(')
+		return LogErrorProto("Expected '(' in prototype");
+
+	// read list of argument names
+	std::vector<std::string> ArgNames;
+	while (getNextToken() == tok_identifier)
+		ArgNames.push_back(IdentifierStr);
+	if (CurTok != ')')
+		return LogErrorProto("Expected ')' in prototype");
+
+	// success
+	getNextToken(); // eat ')'
+
+	// return PrototypeAST of filename and argument name list
+	return std::make_unique<PrototypeAST>(FnName, std::move(ArgNames));
+}
+
+// definiton 'def' prototype expression
+static std::unique_ptr<FunctionAST> ParseDefinition() {
+	getNextToken(); // eat "def"
+	auto Proto = ParsePrototype();
+	if (!Proto) 
+		return nullptr;
+
+	if (auto E = ParseExpression())
+		return std::make_unique<FunctionAST>(std::move(Proto), std::move(E));
+
+	return nullptr;
+}
+
+// external 'extern' prototype
+static std::unique_ptr<PrototypeAST> ParseExtern() {
+	getNextToken();
+	return ParsePrototype();
+}
+
+// toplevelexpr expression
+static std::unique_ptr<FunctionAST> ParseTopLevelExpr() {
+	if (auto E = ParseExpression()) {
+		// make anonyomus prototype
+		auto Proto = std::make_unique<PrototypeAST>("", std::vector<std::string>());
+		return std::make_unique<FunctionAST>(std::move(Proto), std::move(E));
+	}
+	return nullptr;
+}
+
+// top-level parsing
+static void HandleDefinition() {
+	if (ParseDefinition()) {
+		fprintf(stderr, "Parsed a function definition.\n");
+	} else {
+		// skip token for error recovery
+		getNextToken();
+	}
+}
+static void HandleExtern() {
+	if (ParseExtern()) {
+		fprintf(stderr, "Parsed an extern.\n");
+	} else {
+		// skip token for error recovery
+		getNextToken();
+	}
+}
+static void HandleTopLevelExpression() {
+	if (ParseTopLevelExpr()) {
+		fprintf(stderr, "Parsed a top-level expr.\n");
+	} else {
+		// skip token for error recovery
+		getNextToken();
+	}
+}
+
+// top = def | extern | expression | ';'
+static void MainLoop() {
+	while (true) {
+		fprintf(stderr, "> ");
+		switch (CurTok) {
+			case tok_eof:
+			return;
+			case ';': //ignore top-level semicolons
+				getNextToken();
+			break;
+			case tok_def:
+				HandleDefinition();
+			break;
+			case tok_extern:
+				HandleExtern();
+			break;
+			default:
+				HandleTopLevelExpression();
+			break;
+		}
+	}
+}
+
+int main() {
+	// 1 is lowest precedence
+	BinopPrecedence['<'] = 10;
+	BinopPrecedence['+'] = 20;
+	BinopPrecedence['-'] = 30;
+	BinopPrecedence['*'] = 40;
+	
+	fprintf(stderr, "> ");
+	getNextToken();
+
+	MainLoop();
+	
+	return 0;
 }
